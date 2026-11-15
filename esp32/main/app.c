@@ -11,19 +11,22 @@
  * Top to bottom:
  *   1. "target": the sample sentence hand-shaped into presentation forms and
  *      stored in display order, i.e. what correct output looks like
- *   2. "label":  the same sentence through lv_label_set_text(), as v6 draws it
+ *   2. "label":  the same sentence through arabic_label_set_text()
  *   3. the textarea under test (focused at start: typing goes here)
  *   4. the code points the textarea stores (last few; the serial console
  *      prints all of them on every change)
- *   5. v6's keyboard (English only; Tab focuses it, arrows pick a key,
+ *   5. the Arabic keyboard (arabic_kb.c; Tab focuses it, arrows pick a key,
  *      Enter presses it, same path as a touch tap)
  *
- * This is LVGL as released: no Arabic support. The design branches add it.
+ * Design A, the double buffer (components/arabic_input): rows 2 and 3 use
+ * arabic_label_set_text() and an arabic_ta. Row 4 shows the logical buffer;
+ * the console prints "[logical]" and "[display]".
  */
 
 #include "app.h"
 #include <stdio.h>
 #include <string.h>
+#include "arabic_input.h"
 
 #define SAMPLE_TEXT "مرحبا بك في ESP32"
 
@@ -108,17 +111,19 @@ static void print_codes(const char * tag, const char * txt, int cursor, char * l
     if(line && total == 0) snprintf(line, size, "(empty)");
 }
 
-/* Logs what the textarea really stores. */
+/* Logs both buffers of the arabic_ta: the logical one keeps the letters as
+ * typed, the display one is what lv_ta draws. The screen shows the logical one. */
 static void show_text_codes(void)
 {
     char line[CODES_SHOWN * 7 + 8];
-    print_codes("[stored]", lv_ta_get_text(ta), lv_ta_get_cursor_pos(ta), line, sizeof(line));
+    print_codes("[logical]", arabic_ta_get_text(ta), arabic_ta_get_cursor(ta), line, sizeof(line));
+    print_codes("[display]", arabic_ta_get_display_text(ta), lv_ta_get_cursor_pos(ta), NULL, 0);
     lv_label_set_text(codes_label, line);
 }
 
 static const char * ta_text(void)
 {
-    return lv_ta_get_text(ta);
+    return arabic_ta_get_text(ta);
 }
 
 static void ta_event_cb(lv_obj_t * obj, lv_event_t event)
@@ -149,7 +154,7 @@ static lv_obj_t * caption(lv_obj_t * parent, const char * txt, lv_coord_t y)
     return l;
 }
 
-/* `logical`: txt is typed text (stock LVGL draws it as it is);
+/* `logical`: txt is typed text (arabic_label_set_text() shapes and orders it);
  * otherwise txt is already shaped and in display order. */
 static lv_obj_t * arabic_label(lv_obj_t * parent, const char * txt, lv_coord_t y, bool logical)
 {
@@ -159,7 +164,10 @@ static lv_obj_t * arabic_label(lv_obj_t * parent, const char * txt, lv_coord_t y
     lv_label_set_align(l, LV_LABEL_ALIGN_RIGHT);
     lv_obj_set_size(l, 262, 24);
     lv_obj_set_pos(l, 54, y);
-    (void)logical;
+    if(logical) {
+        arabic_label_set_text(l, txt);
+        return l;
+    }
     lv_label_set_text(l, txt);
     return l;
 }
@@ -183,18 +191,18 @@ static void build(void)
     arabic_label(scr, SAMPLE_TEXT, y, true);
     y += 28;
 
-    ta = lv_ta_create(scr, NULL);
+    ta = arabic_ta_create(scr, NULL);
     lv_style_copy(&style_ta, lv_ta_get_style(ta, LV_TA_STYLE_BG));
     style_ta.text.font = &lv_font_arabic_16;
     style_ta.body.padding.top = 4;
     style_ta.body.padding.bottom = 4;
     lv_ta_set_style(ta, LV_TA_STYLE_BG, &style_ta);
-    lv_ta_set_one_line(ta, true);
+    arabic_ta_set_one_line(ta, true);
     lv_ta_set_text(ta, "");
     lv_ta_set_placeholder_text(ta, "type here");
     lv_obj_set_width(ta, 312);
     lv_obj_set_pos(ta, 4, y);
-    lv_obj_set_event_cb(ta, ta_event_cb);
+    arabic_ta_set_event_cb(ta, ta_event_cb);
 
     codes_label = lv_label_create(scr, NULL);
     lv_label_set_style(codes_label, LV_LABEL_STYLE_MAIN, &style_caption);
@@ -202,7 +210,7 @@ static void build(void)
     lv_obj_set_size(codes_label, 312, 14);
     lv_obj_align(codes_label, ta, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
-    lv_obj_t * kb = lv_kb_create(scr, NULL);
+    lv_obj_t * kb = arabic_kb_create(scr, &lv_font_arabic_16);
     lv_obj_set_size(kb, 320, 240 - lv_obj_get_y(codes_label) - 18);
     lv_obj_align(kb, NULL, LV_ALIGN_IN_BOTTOM_MID, 0, 0);
     lv_kb_set_ta(kb, ta);
