@@ -1,0 +1,58 @@
+menu "Arabic LVGL demo"
+
+    choice APP_BOARD
+        prompt "Target board"
+        default APP_BOARD_QEMU
+        help
+            Where the firmware runs. Only main/board_*.c depends on this.
+
+        config APP_BOARD_QEMU
+            bool "Espressif QEMU (virtual RGB panel, serial keyboard)"
+        config APP_BOARD_CYD
+            bool "ESP32-2432S028R 'Cheap Yellow Display' (2.8in SPI panel + XPT2046 touch)"
+    endchoice
+
+    if APP_BOARD_CYD
+
+        choice APP_CYD_PANEL
+            prompt "Display controller"
+            default APP_CYD_PANEL_AUTO
+            config APP_CYD_PANEL_AUTO
+                bool "Detect at boot (reads the controller ID)"
+            config APP_CYD_PANEL_ILI9341
+                bool "ILI9341"
+            config APP_CYD_PANEL_ST7789
+                bool "ST7789"
+        endchoice
+
+        config APP_CYD_INVERT_COLORS
+            bool "Invert colors (IPS panels)"
+            default n
+
+        config APP_CYD_ROTATE_180
+            bool "Rotate the picture by 180 degrees"
+            default n
+
+        config APP_CYD_BGR
+            bool "Panel uses BGR color order"
+            default y
+
+        config APP_CYD_TOUCH_X_MIN
+            int "Touch: raw value at the left edge"
+            default 200
+        config APP_CYD_TOUCH_X_MAX
+            int "Touch: raw value at the right edge"
+            default 3700
+        config APP_CYD_TOUCH_Y_MIN
+            int "Touch: raw value at the top edge"
+            default 240
+        config APP_CYD_TOUCH_Y_MAX
+            int "Touch: raw value at the bottom edge"
+            default 3800
+        config APP_CYD_TOUCH_Z_MIN
+            int "Touch: minimum pressure for a press"
+            default 400
+
+    endif
+
+endmenu

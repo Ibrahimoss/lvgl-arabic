@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.3"
+  # esp_lcd driver for the virtual framebuffer in Espressif's QEMU
+  espressif/esp_lcd_qemu_rgb: "^1.0.2"
+  # ILI9341 panel of the ESP32-2432S028R (ST7789 is built into esp_lcd)
+  espressif/esp_lcd_ili9341: "^2"

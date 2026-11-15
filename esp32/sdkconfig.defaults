@@ -1,0 +1,13 @@
+# ---------------------------------------------------------------------------
+# Chip / system
+# ---------------------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# LVGL + the Arabic font don't fit the default 1 MB app partition
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# 1 ms scheduler tick for a responsive LVGL loop
+CONFIG_FREERTOS_HZ=1000
+# LVGL runs in app_main; text handling needs more than the 3.5 KB default
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# LVGL v6.1.2 has no Kconfig; it is configured in components/lvgl/lv_conf.h
