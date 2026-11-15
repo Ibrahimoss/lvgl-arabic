@@ -15,6 +15,7 @@
 #include "../lv_misc/lv_color.h"
 #include "../lv_misc/lv_math.h"
 #include "../lv_misc/lv_bidi.h"
+#include "../lv_misc/lv_txt_ar.h" /*Patch C: letters are measured in the form they are drawn in*/
 #include "../lv_misc/lv_printf.h"
 
 /*********************
@@ -627,9 +628,28 @@ void lv_label_get_letter_pos(const lv_obj_t * label, uint16_t char_id, lv_point_
 
     const char *bidi_txt;
     uint16_t visual_byte_pos;
+    lv_txt_flag_t width_flag = flag; /*Patch C: | LV_TXT_FLAG_VISUAL when bidi_txt is in display order*/
 #if LV_USE_BIDI
     /*Handle Bidi*/
-    if(new_line_start == byte_id) {
+    uint32_t last_letter = 0;
+    if(new_line_start == byte_id && byte_id > line_start) {
+        uint32_t last = byte_id;
+        last_letter = lv_txt_encoded_prev(txt, &last);
+    }
+    if(new_line_start == byte_id && byte_id > line_start && last_letter != '\n' && last_letter != '\r') {
+        /*Patch C: after the last letter of the line the caret goes next to that
+         *letter on its far side, which is its left side if it is right to left
+         *(stock v6 always put it at the right end of the line)*/
+        uint16_t last_char_id = lv_txt_encoded_get_char_id(&txt[line_start], byte_id - line_start) - 1;
+        bool is_rtl;
+        char *mutable_bidi_txt;
+        uint16_t visual_char_pos = lv_bidi_get_visual_pos(&txt[line_start], &mutable_bidi_txt, new_line_start - line_start, lv_obj_get_base_dir(label), last_char_id, &is_rtl);
+        bidi_txt = mutable_bidi_txt;
+        if (!is_rtl) visual_char_pos++;
+        visual_byte_pos = lv_txt_encoded_get_byte_id(bidi_txt, visual_char_pos);
+        width_flag |= LV_TXT_FLAG_VISUAL;
+    }
+    else if(new_line_start == byte_id) {
         visual_byte_pos = byte_id - line_start;
         bidi_txt =  &txt[line_start];
     }
@@ -642,6 +662,7 @@ void lv_label_get_letter_pos(const lv_obj_t * label, uint16_t char_id, lv_point_
         bidi_txt = mutable_bidi_txt;
         if (is_rtl) visual_char_pos++;
         visual_byte_pos = lv_txt_encoded_get_byte_id(bidi_txt, visual_char_pos);
+        width_flag |= LV_TXT_FLAG_VISUAL;
     }
 #else
     bidi_txt = &txt[line_start];
@@ -650,18 +671,18 @@ void lv_label_get_letter_pos(const lv_obj_t * label, uint16_t char_id, lv_point_
 
 
     /*Calculate the x coordinate*/
-    lv_coord_t x = lv_txt_get_width(bidi_txt, visual_byte_pos, font, style->text.letter_space, flag);
+    lv_coord_t x = lv_txt_get_width(bidi_txt, visual_byte_pos, font, style->text.letter_space, width_flag);
 
     if(char_id != line_start) x += style->text.letter_space;
 
     if(align == LV_LABEL_ALIGN_CENTER) {
         lv_coord_t line_w;
-        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, flag);
+        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, width_flag);
         x += lv_obj_get_width(label) / 2 - line_w / 2;
 
     } else if(align == LV_LABEL_ALIGN_RIGHT) {
         lv_coord_t line_w;
-        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, flag);
+        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, width_flag);
 
         x += lv_obj_get_width(label) - line_w;
     }
@@ -735,14 +756,15 @@ uint16_t lv_label_get_letter_on(const lv_obj_t * label, lv_point_t * pos)
 
     /*Calculate the x coordinate*/
     lv_coord_t x = 0;
+    lv_txt_flag_t width_flag = LV_USE_BIDI ? (flag | LV_TXT_FLAG_VISUAL) : flag; /*Patch C*/
     if(align == LV_LABEL_ALIGN_CENTER) {
         lv_coord_t line_w;
-        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, flag);
+        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, width_flag);
         x += lv_obj_get_width(label) / 2 - line_w / 2;
     }
     else if(align == LV_LABEL_ALIGN_RIGHT) {
         lv_coord_t line_w;
-        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, flag);
+        line_w = lv_txt_get_width(bidi_txt, new_line_start - line_start, font, style->text.letter_space, width_flag);
         x += lv_obj_get_width(label) - line_w;
     }
 
@@ -752,6 +774,7 @@ uint16_t lv_label_get_letter_on(const lv_obj_t * label, lv_point_t * pos)
     uint32_t i_act = i;
     uint32_t letter;
     uint32_t letter_next;
+    uint32_t letter_prev = 0; /*Patch C: shaping*/
 
     if(new_line_start > 0) {
         while(i + line_start < new_line_start) {
@@ -768,7 +791,8 @@ uint16_t lv_label_get_letter_on(const lv_obj_t * label, lv_point_t * pos)
                 }
             }
 
-            x += lv_font_get_glyph_width(font, letter, letter_next);
+            x += lv_txt_ar_width(font, letter_prev, letter, letter_next, LV_USE_BIDI != 0);
+            letter_prev = letter;
 
             /*Finish if the x position or the last char of the line is reached*/
             if(pos->x < x || i + line_start == new_line_start) {
@@ -891,6 +915,8 @@ bool lv_label_is_char_under_pos(const lv_obj_t * label, lv_point_t * pos)
     uint32_t i_current   = i;
     uint32_t letter      = '\0';
     uint32_t letter_next = '\0';
+    uint32_t letter_prev = '\0'; /*Patch C: shaping*/
+    uint32_t last_prev   = '\0';
 
     if(new_line_start > 0) {
         while(i <= new_line_start - 1) {
@@ -908,7 +934,9 @@ bool lv_label_is_char_under_pos(const lv_obj_t * label, lv_point_t * pos)
                 }
             }
             last_x = x;
-            x += lv_font_get_glyph_width(font, letter, letter_next);
+            last_prev = letter_prev;
+            x += lv_txt_ar_width(font, letter_prev, letter, letter_next, false);
+            letter_prev = letter;
             if(pos->x < x) {
                 i = i_current;
                 break;
@@ -918,7 +946,7 @@ bool lv_label_is_char_under_pos(const lv_obj_t * label, lv_point_t * pos)
         }
     }
 
-    int32_t max_diff = lv_font_get_glyph_width(font, letter, letter_next) + style->text.letter_space + 1;
+    int32_t max_diff = lv_txt_ar_width(font, last_prev, letter, letter_next, false) + style->text.letter_space + 1;
     return (pos->x >= (last_x - style->text.letter_space) && pos->x <= (last_x + max_diff));
 }
 

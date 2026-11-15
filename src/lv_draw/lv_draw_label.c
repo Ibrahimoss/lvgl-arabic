@@ -9,6 +9,7 @@
 #include "lv_draw_label.h"
 #include "../lv_misc/lv_math.h"
 #include "../lv_misc/lv_bidi.h"
+#include "../lv_misc/lv_txt_ar.h" /*Patch C: shaping while drawing*/
 
 /*********************
  *      DEFINES
@@ -175,6 +176,7 @@ void lv_draw_label(const lv_area_t * coords, const lv_area_t * mask, const lv_st
         i         = 0;
         uint32_t letter;
         uint32_t letter_next;
+        uint32_t letter_prev = 0; /*Patch C: the letter drawn before, for shaping*/
 #if LV_USE_BIDI
         char *bidi_txt = lv_draw_get_buf(line_end - line_start + 1);
         lv_bidi_process_paragraph(txt + line_start, bidi_txt, line_end - line_start, bidi_dir, NULL, 0);
@@ -240,7 +242,10 @@ void lv_draw_label(const lv_area_t * coords, const lv_area_t * mask, const lv_st
 
             if(cmd_state == CMD_STATE_IN) color = recolor;
 
-            letter_w = lv_font_get_glyph_width(font, letter, letter_next);
+            /*Patch C: the form its neighbours call for (0: an alef inside lam-alef)*/
+            uint32_t glyph = lv_txt_ar_glyph_in(letter_prev, letter, letter_next, LV_USE_BIDI != 0);
+            letter_prev = letter;
+            letter_w = glyph ? lv_font_get_glyph_width(font, glyph, glyph == letter ? letter_next : 0) : 0;
 
             if(sel_start != 0xFFFF && sel_end != 0xFFFF) {
                 if(logical_char_pos >= sel_start && logical_char_pos < sel_end) {
@@ -253,7 +258,7 @@ void lv_draw_label(const lv_area_t * coords, const lv_area_t * mask, const lv_st
                 }
             }
 
-            lv_draw_letter(&pos, mask, font, letter, color, opa);
+            if(glyph) lv_draw_letter(&pos, mask, font, glyph, color, opa);
 
             if(letter_w > 0) {
                 pos.x += letter_w + style->text.letter_space;

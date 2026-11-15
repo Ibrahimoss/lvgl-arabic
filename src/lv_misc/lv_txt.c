@@ -9,6 +9,7 @@
 #include "lv_txt.h"
 #include "lv_math.h"
 #include "lv_log.h"
+#include "lv_txt_ar.h" /*Patch C: letters are measured in the form they are drawn in*/
 
 /*********************
  *      DEFINES
@@ -180,6 +181,7 @@ static uint16_t lv_txt_get_next_word(const char * txt, const lv_font_t * font,
     uint32_t i = 0, i_next = 0, i_next_next = 0;  /* Iterating index into txt */
     uint32_t letter = 0;      /* Letter at i */
     uint32_t letter_next = 0; /* Letter at i_next */
+    uint32_t letter_prev = 0; /* Letter before i (Patch C: shaping) */
     lv_coord_t letter_w;
     lv_coord_t cur_w = 0;  /* Pixel Width of transversed string */
     uint32_t word_len = 0;   /* Number of characters in the transversed word */
@@ -204,7 +206,7 @@ static uint16_t lv_txt_get_next_word(const char * txt, const lv_font_t * font,
             }
         }
 
-        letter_w = lv_font_get_glyph_width(font, letter, letter_next);
+        letter_w = lv_txt_ar_width(font, letter_prev, letter, letter_next, false);
         cur_w += letter_w;
 
         if(letter_w > 0) {
@@ -233,6 +235,7 @@ static uint16_t lv_txt_get_next_word(const char * txt, const lv_font_t * font,
 
         i = i_next;
         i_next = i_next_next;
+        letter_prev = letter;
         letter = letter_next;
     }
 
@@ -349,6 +352,8 @@ lv_coord_t lv_txt_get_width(const char * txt, uint16_t length, const lv_font_t *
     lv_txt_cmd_state_t cmd_state = LV_TXT_CMD_STATE_WAIT;
     uint32_t letter;
     uint32_t letter_next;
+    uint32_t letter_prev = 0;                           /*Patch C: shaping*/
+    bool visual = (flag & LV_TXT_FLAG_VISUAL) != 0;     /*Patch C: text in display order*/
 
     if(length != 0) {
         while(i < length) {
@@ -360,7 +365,8 @@ lv_coord_t lv_txt_get_width(const char * txt, uint16_t length, const lv_font_t *
                 }
             }
 
-            lv_coord_t char_width = lv_font_get_glyph_width(font, letter, letter_next);
+            lv_coord_t char_width = lv_txt_ar_width(font, letter_prev, letter, letter_next, visual);
+            letter_prev = letter;
             if(char_width > 0) {
                 width += char_width;
                 width += letter_space;

@@ -11,19 +11,24 @@
  * Top to bottom:
  *   1. "target": the sample sentence hand-shaped into presentation forms and
  *      stored in display order, i.e. what correct output looks like
- *   2. "label":  the same sentence through lv_label_set_text(), as v6 draws it
+ *   2. "label":  the same sentence through lv_label_set_text(): the patched LVGL
+ *      shapes it while drawing
  *   3. the textarea under test (focused at start: typing goes here)
  *   4. the code points the textarea stores (last few; the serial console
  *      prints all of them on every change)
- *   5. v6's keyboard (English only; Tab focuses it, arrows pick a key,
+ *   5. the Arabic keyboard (arabic_kb.c; Tab focuses it, arrows pick a key,
  *      Enter presses it, same path as a touch tap)
  *
- * This is LVGL as released: no Arabic support. The design branches add it.
+ * Design C, shape while drawing: LVGL itself shapes the letters as it draws
+ * them (src/lv_misc/lv_txt_ar.c and the changes marked "Patch C" in src/).
+ * Rows 2 and 3 are plain LVGL, and the text area stores what was typed
+ * ("[stored]").
  */
 
 #include "app.h"
 #include <stdio.h>
 #include <string.h>
+#include "arabic_kb.h"
 
 #define SAMPLE_TEXT "مرحبا بك في ESP32"
 
@@ -121,6 +126,20 @@ static const char * ta_text(void)
     return lv_ta_get_text(ta);
 }
 
+/* With C, LVGL draws Arabic right to left, but a v6 text area does not right
+ * align it, and in one-line mode it only scrolls left-aligned text: right
+ * aligned while the text fits, left aligned when it is wider. */
+static void render_align(void)
+{
+    lv_obj_t * label = lv_ta_get_label(ta);
+    const lv_style_t * style = lv_obj_get_style(label);
+    const char * txt = lv_ta_get_text(ta);
+    lv_coord_t w = lv_txt_get_width(txt, (uint16_t)strlen(txt), style->text.font, style->text.letter_space,
+                                    LV_TXT_FLAG_NONE);
+    lv_label_align_t align = w + 2 > lv_page_get_fit_width(ta) ? LV_LABEL_ALIGN_LEFT : LV_LABEL_ALIGN_RIGHT;
+    if(lv_label_get_align(label) != align) lv_ta_set_text_align(ta, align);
+}
+
 static void ta_event_cb(lv_obj_t * obj, lv_event_t event)
 {
     (void)obj;
@@ -133,6 +152,7 @@ static void ta_event_cb(lv_obj_t * obj, lv_event_t event)
         printf("  \"%s\"\n", in);
     }
     else if(event == LV_EVENT_VALUE_CHANGED) {
+        render_align();
         show_text_codes();
     }
     else if(event == LV_EVENT_APPLY) { /*the keyboard's OK key*/
@@ -149,7 +169,7 @@ static lv_obj_t * caption(lv_obj_t * parent, const char * txt, lv_coord_t y)
     return l;
 }
 
-/* `logical`: txt is typed text (stock LVGL draws it as it is);
+/* `logical`: txt is typed text (the patched LVGL shapes it while drawing);
  * otherwise txt is already shaped and in display order. */
 static lv_obj_t * arabic_label(lv_obj_t * parent, const char * txt, lv_coord_t y, bool logical)
 {
@@ -195,6 +215,7 @@ static void build(void)
     lv_obj_set_width(ta, 312);
     lv_obj_set_pos(ta, 4, y);
     lv_obj_set_event_cb(ta, ta_event_cb);
+    render_align(); /*the empty field too, before the first edit*/
 
     codes_label = lv_label_create(scr, NULL);
     lv_label_set_style(codes_label, LV_LABEL_STYLE_MAIN, &style_caption);
@@ -202,7 +223,7 @@ static void build(void)
     lv_obj_set_size(codes_label, 312, 14);
     lv_obj_align(codes_label, ta, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
-    lv_obj_t * kb = lv_kb_create(scr, NULL);
+    lv_obj_t * kb = arabic_kb_create(scr, &lv_font_arabic_16);
     lv_obj_set_size(kb, 320, 240 - lv_obj_get_y(codes_label) - 18);
     lv_obj_align(kb, NULL, LV_ALIGN_IN_BOTTOM_MID, 0, 0);
     lv_kb_set_ta(kb, ta);

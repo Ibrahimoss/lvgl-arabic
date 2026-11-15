@@ -41,6 +41,7 @@ static uint32_t char_change_to_pair(uint32_t letter);
 static lv_bidi_dir_t bracket_process(const char * txt, uint32_t next_pos, uint32_t len, uint32_t letter, lv_bidi_dir_t base_dir);
 static void fill_pos_conv(uint16_t * out, uint16_t len, uint16_t index);
 static uint32_t get_txt_len(const char * txt, uint32_t max_len);
+static bool number_continues(const char * src, uint32_t i, uint32_t letter);
 
 /**********************
  *  STATIC VARIABLES
@@ -112,6 +113,10 @@ lv_bidi_dir_t lv_bidi_get_letter_dir(uint32_t letter)
 
 bool lv_bidi_letter_is_weak(uint32_t letter)
 {
+    /*Patch C: Arabic-Indic and Persian digits are numbers too, with the Arabic
+     *decimal and thousands separators*/
+    if((letter >= 0x0660 && letter <= 0x066C) || (letter >= 0x06F0 && letter <= 0x06F9)) return true;
+
     uint32_t i = 0;
     static const char weaks[] = "0123456789";
 
@@ -129,6 +134,11 @@ bool lv_bidi_letter_is_rtl(uint32_t letter)
 {
      if(letter >= 0x5d0 && letter <= 0x5ea) return true;
     if(letter == 0x202E) return true;               /*Unicode of LV_BIDI_RLO*/
+    /*Patch C: Arabic letters, marks and signs (not the digits, see lv_bidi_letter_is_weak()).
+     *Text keeps one code per letter; the presentation forms U+FBxx-U+FExx are left
+     *as they are, so text that is already shaped and in display order stays so.*/
+    if(letter >= 0x0600 && letter <= 0x06FF && letter != 0x060C && !lv_bidi_letter_is_weak(letter)) return true;
+    if(letter >= 0x0750 && letter <= 0x077F) return true;
 //    if(letter >= 'a' && letter <= 'z') return true;
 
     return false;
@@ -141,6 +151,7 @@ bool lv_bidi_letter_is_neutral(uint32_t letter)
     for(i = 0; neutrals[i] != '\0'; i++) {
         if(letter == (uint32_t)neutrals[i]) return true;
     }
+    if(letter == 0x060C) return true; /*Patch C: the Arabic comma separates like ','*/
 
     return false;
 }
@@ -395,7 +406,8 @@ static void rtl_reverse(char * dest, const char * src, uint32_t len, uint16_t *p
 
         /*Keep weak letters (numbers) as LTR*/
         if(lv_bidi_letter_is_weak(letter)) {
-            uint32_t last_weak = i;
+            /*Patch C: where the last weak letter ends; an Arabic-Indic digit takes 2 bytes*/
+            uint32_t last_weak_end = i + lv_txt_encoded_size((const char *)&src[i]);
             uint32_t first_weak = i;
             uint16_t pos_conv_last_weak = pos_conv_i;
             uint16_t pos_conv_first_weak = pos_conv_i;
@@ -407,7 +419,7 @@ static void rtl_reverse(char * dest, const char * src, uint32_t len, uint16_t *p
 
                 /*Finish on non-weak char */
                 /*but treat number and currency related chars as weak*/
-                if (lv_bidi_letter_is_weak(letter) == false && letter != '.' && letter != ',' && letter != '$' && letter != '%') {
+                if (!number_continues(src, i, letter)) {
                     lv_txt_encoded_next(src, &i);   /*Rewind one letter*/
                     pos_conv_i++;
                     first_weak = i;
@@ -420,9 +432,9 @@ static void rtl_reverse(char * dest, const char * src, uint32_t len, uint16_t *p
                 pos_conv_first_weak = 0;
             }
 
-            if (dest) memcpy(&dest[wr], &src[first_weak], last_weak - first_weak + 1);
+            if (dest) memcpy(&dest[wr], &src[first_weak], last_weak_end - first_weak);
             if (pos_conv_out) fill_pos_conv(&pos_conv_out[pos_conv_wr], pos_conv_last_weak - pos_conv_first_weak + 1, pos_conv_rd_base + pos_conv_first_weak); 
-            wr += last_weak - first_weak + 1;
+            wr += last_weak_end - first_weak;
             pos_conv_wr += pos_conv_last_weak - pos_conv_first_weak + 1;
         }
 
@@ -446,6 +458,21 @@ static void rtl_reverse(char * dest, const char * src, uint32_t len, uint16_t *p
             }
         }
     }
+}
+
+/*Patch C: whether `letter`, just before src[i], is still part of the number
+ *after it. Currency and percent signs are; a common separator only between
+ *two digits ("3.14", "1,000", "10:30", "3/4"), as in Unicode's BiDi rules W4
+ *and W5. Not '-' and '+': after Arabic letters the digits are Arabic numbers,
+ *which these do not join (Unicode shows "2026-10-28" there as 28-10-2026).
+ *Stock v6 kept every '.' and ',' and no other separator.*/
+static bool number_continues(const char * src, uint32_t i, uint32_t letter)
+{
+    if(lv_bidi_letter_is_weak(letter) || letter == '$' || letter == '%') return true;
+    if(letter != '.' && letter != ',' && letter != ':' && letter != '/' && letter != 0x060C) return false;
+    if(i == 0) return false;
+    uint32_t j = i;
+    return lv_bidi_letter_is_weak(lv_txt_encoded_prev(src, &j));
 }
 
 static uint32_t char_change_to_pair(uint32_t letter)
