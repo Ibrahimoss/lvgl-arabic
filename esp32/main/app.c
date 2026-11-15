@@ -11,19 +11,25 @@
  * Top to bottom:
  *   1. "target": the sample sentence hand-shaped into presentation forms and
  *      stored in display order, i.e. what correct output looks like
- *   2. "label":  the same sentence through lv_label_set_text(), as v6 draws it
+ *   2. "label":  the same sentence converted for the field as a host had to for
+ *      an Arabic terminal (arabic_term_label_set_text())
  *   3. the textarea under test (focused at start: typing goes here)
  *   4. the code points the textarea stores (last few; the serial console
  *      prints all of them on every change)
- *   5. v6's keyboard (English only; Tab focuses it, arrows pick a key,
+ *   5. the Arabic keyboard (arabic_kb.c; Tab focuses it, arrows pick a key,
  *      Enter presses it, same path as a touch tap)
  *
- * This is LVGL as released: no Arabic support. The design branches add it.
+ * Design B, shape while typing, store what is shown (arabic_term.h): row 4
+ * shows what the text area stores (shaped, display order); the console
+ * prints it ("[stored]") and the text converted back ("[logical]").
  */
 
 #include "app.h"
 #include <stdio.h>
 #include <string.h>
+#include "arabic_kb.h"
+#include "arabic_term.h"
+#include "arabic_utf8.h" /*AR_MAX_CHARS*/
 
 #define SAMPLE_TEXT "مرحبا بك في ESP32"
 
@@ -108,17 +114,21 @@ static void print_codes(const char * tag, const char * txt, int cursor, char * l
     if(line && total == 0) snprintf(line, size, "(empty)");
 }
 
-/* Logs what the textarea really stores. */
+static char typed[AR_MAX_CHARS * 4 + 1];
+
+/* Logs what the text area stores (shaped, in display order) and the text
+ * converted back to typing order. The screen shows the stored one. */
 static void show_text_codes(void)
 {
     char line[CODES_SHOWN * 7 + 8];
     print_codes("[stored]", lv_ta_get_text(ta), lv_ta_get_cursor_pos(ta), line, sizeof(line));
+    print_codes("[logical]", arabic_term_get_text(ta, typed, sizeof(typed)), -1, NULL, 0);
     lv_label_set_text(codes_label, line);
 }
 
 static const char * ta_text(void)
 {
-    return lv_ta_get_text(ta);
+    return arabic_term_get_text(ta, typed, sizeof(typed));
 }
 
 static void ta_event_cb(lv_obj_t * obj, lv_event_t event)
@@ -149,7 +159,7 @@ static lv_obj_t * caption(lv_obj_t * parent, const char * txt, lv_coord_t y)
     return l;
 }
 
-/* `logical`: txt is typed text (stock LVGL draws it as it is);
+/* `logical`: txt is typed text (converted to what the field would store);
  * otherwise txt is already shaped and in display order. */
 static lv_obj_t * arabic_label(lv_obj_t * parent, const char * txt, lv_coord_t y, bool logical)
 {
@@ -159,7 +169,10 @@ static lv_obj_t * arabic_label(lv_obj_t * parent, const char * txt, lv_coord_t y
     lv_label_set_align(l, LV_LABEL_ALIGN_RIGHT);
     lv_obj_set_size(l, 262, 24);
     lv_obj_set_pos(l, 54, y);
-    (void)logical;
+    if(logical) {
+        arabic_term_label_set_text(l, txt); /*converted as a host had to for an Arabic terminal*/
+        return l;
+    }
     lv_label_set_text(l, txt);
     return l;
 }
@@ -194,7 +207,7 @@ static void build(void)
     lv_ta_set_placeholder_text(ta, "type here");
     lv_obj_set_width(ta, 312);
     lv_obj_set_pos(ta, 4, y);
-    lv_obj_set_event_cb(ta, ta_event_cb);
+    arabic_term_attach(ta, ta_event_cb);
 
     codes_label = lv_label_create(scr, NULL);
     lv_label_set_style(codes_label, LV_LABEL_STYLE_MAIN, &style_caption);
@@ -202,7 +215,7 @@ static void build(void)
     lv_obj_set_size(codes_label, 312, 14);
     lv_obj_align(codes_label, ta, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
 
-    lv_obj_t * kb = lv_kb_create(scr, NULL);
+    lv_obj_t * kb = arabic_kb_create(scr, &lv_font_arabic_16);
     lv_obj_set_size(kb, 320, 240 - lv_obj_get_y(codes_label) - 18);
     lv_obj_align(kb, NULL, LV_ALIGN_IN_BOTTOM_MID, 0, 0);
     lv_kb_set_ta(kb, ta);
